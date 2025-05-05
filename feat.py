@@ -18,26 +18,23 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.feature_selection import RFE
+import numpy as np
+from scipy.io import loadmat
+import os
 
 # ================== 数据加载与分段 ==================
 def load_ppg_abp_from_folder(folder_path):
-    """从指定文件夹中读取.mat文件的PPG和ABP数据。
-    返回一个记录列表，每个元素为{'ppg': ppg_array, 'abp': abp_array}。"""
-    from scipy.io import loadmat
-    import os
+    """从指定文件夹读取所有.mat文件的PPG和ABP序列。"""
     records = []
-    # 列出文件夹中所有.mat文件，按照文件名中的数字顺序排序
     file_list = sorted([f for f in os.listdir(folder_path) if f.endswith('.mat')],
                        key=lambda x: int(os.path.splitext(x)[0]) if x[:-4].isdigit() else x)
     for filename in file_list:
-        file_path = os.path.join(folder_path, filename)
-        data = loadmat(file_path)
+        data = loadmat(os.path.join(folder_path, filename))
+        # 兼容不同.mat存储格式
         if 'data' in data:
-            # 如果.mat是一个结构体 'data' 包含 ppg 和 abp 字段
             ppg = data['data']['ppg'][0,0].squeeze()
             abp = data['data']['abp'][0,0].squeeze()
         else:
-            # 如果.mat直接包含 ppg 和 abp 键
             ppg = data.get('ppg', None)
             abp = data.get('abp', None)
             if ppg is not None: ppg = ppg.squeeze()
@@ -48,24 +45,18 @@ def load_ppg_abp_from_folder(folder_path):
     return records
 
 def segment_signal(ppg, abp, window_size, step_size):
-    """将PPG和ABP序列按滑动窗口切分成多段。
-    返回一个列表，每个元素是{'ppg_segment': ppg_seg, 'abp_segment': abp_seg}。
-    参数:
-        ppg: 1D numpy数组, 原始PPG信号
-        abp: 1D numpy数组, 原始ABP信号(需与PPG长度一致)
-        window_size: 窗口长度(采样点数)
-        step_size: 滑动步长(采样点数)
-    """
+    """利用滑动窗口将PPG和ABP序列切分为多个片段。"""
     n = len(ppg)
-    samples = []
+    segments = []
     start = 0
     while start + window_size <= n:
         end = start + window_size
-        ppg_seg = ppg[start:end]
-        abp_seg = abp[start:end]
-        samples.append({'ppg_segment': ppg_seg, 'abp_segment': abp_seg})
+        segments.append({
+            'ppg_segment': ppg[start:end],
+            'abp_segment': abp[start:end]
+        })
         start += step_size
-    return samples
+    return segments
 
 # ================== 75维特征提取 ==================
 def _band_power(sig, fs, fmin, fmax):
